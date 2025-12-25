@@ -19,8 +19,83 @@ void print_bin(uint8_t num) {
     for(int i = 7; i >= 0; i--) {
         printf("%d", num & (1 << i) ? 1 : 0);
     }
-    printf(" (%c)", IS_ALIVE(num) ? 'X' : '.');
     fflush(stdout);
+}
+
+
+void print_binc(uint8_t num, char alive, char n_alive) {
+    for(int i = 7; i >= 0; i--) {
+        printf("%d", num & (1 << i) ? 1 : 0);
+    }
+    printf(" (%c)", IS_ALIVE(num) ? alive : n_alive);
+    fflush(stdout);
+}
+
+
+void mprint_binc(
+    uint8_t* mat, 
+    int rows, 
+    int cols, 
+    char alive, 
+    char n_alive
+) {
+    for(int i = 0; i < rows; i++) {
+        for(int j = 0; j < cols; j++) {
+            print_binc(mat[i * rows + j], alive, n_alive);
+            printf(" ");
+        }
+        printf("\n");
+    }
+}
+
+
+// NOTE: Do NOT forget to free the returned pointer
+uint8_t* get_chunk(
+    uint8_t* buffer, // full buffer of cells
+    int rows, // buffer row count
+    int columns, // columns row count
+    int* start, // int[2] start corner (upper left) - inclusive
+    int* end // int[2] end corner (lower right) - inclusive
+) {
+    int chunk_rows = end[1] - start[1] + 1;
+    int chunk_cols = end[0] - start[0] + 1;
+
+    uint8_t* chunk = calloc(chunk_rows * chunk_cols, sizeof(uint8_t));
+    if(!chunk) {
+        perror("Error allocating chunk array");
+        exit(errno);
+    }
+
+    for(int i = start[1]; i <= end[1]; i++) {
+        for(int j = start[0]; j <= end[0]; j++) {
+            int buff_idx = i * columns + j;
+            int chunk_idx = (i - start[1]) * chunk_cols + (j - start[0]);
+            chunk[chunk_idx] = buffer[buff_idx];
+        }
+    }
+
+    return chunk;
+}
+
+
+void place_chunk(
+    uint8_t* buffer,
+    int rows,
+    int columns,
+    uint8_t* chunk,
+    int* start,
+    int* end
+) {
+    // int chunk_rows = end[1] - start[1] + 1;
+    int chunk_cols = end[0] - start[0] + 1;
+
+    for(int i = start[1]; i <= end[1]; i++) {
+        for(int j = start[0]; j <= end[0]; j++) {
+            int buff_idx = i * columns + j;
+            int chunk_idx = (i - start[1]) * chunk_cols + (j - start[0]);
+            buffer[buff_idx] = chunk[chunk_idx];
+        }
+    }
 }
 
 
@@ -98,4 +173,31 @@ uint8_t* fload_gen(
     fclose(in_file);
 
     return buffer;
+}
+
+
+// Solver for the next generation. In place modifications
+void solver(uint8_t* cells, int rows, int cols) {
+    for(int i = 0; i < rows; i++) {
+        for(int j = 0; j < cols; j++) {
+            int idx = i * cols + j;
+            cells[idx] = (cells[idx] & 0xfe) | MAKE_ALIVE(cells[idx]);
+        }
+    }
+}
+
+
+void updater(uint8_t* cells, int rows, int cols) {
+    // row = 0 and col = 0 is the "bandaid" from the other operation, so we start from row = 1, col = 1
+    for(int i = 1; i < rows; i++) {
+        for(int j = 1; j < cols; j++) {
+            int idx = i * cols + j;
+            int idx_n = (i - 1) * cols + j;
+            int idx_w = i * cols + (j - 1);
+
+            cells[idx] = IS_ALIVE(cells[idx]) | (CELL_NORTH * IS_ALIVE(cells[idx_n])) | (CELL_WEST * IS_ALIVE(cells[idx_w]));
+            cells[idx_n] |= CELL_SOUTH * IS_ALIVE(cells[idx]);
+            cells[idx_w] |= CELL_EAST * IS_ALIVE(cells[idx]);
+        }
+    }
 }

@@ -32,6 +32,10 @@
 // void swap(void*, void*);
 void swapp(void**, void**);
 void print_bin(uint8_t);
+void print_binc(uint8_t, char, char);
+void mprint_binc(uint8_t*, int, int, char, char);
+uint8_t* get_chunk(uint8_t*, int, int, int*, int*);
+void place_chunk(uint8_t*, int, int, uint8_t*, int*, int*);
 
 /* I/O */
 uint8_t* fload_gen(char*, int*, int*);
@@ -40,21 +44,21 @@ uint8_t* fload_gen(char*, int*, int*);
 // In place solver, using the per cell data and the two above macros
 /*
     Args:
-        uint8_t*: Matrix array
-        int*: size 2 array of start positions (row, col)
-        int*: size 2 array of end positions (row, col)
+        uint8_t*: Matrix array chunk
+        int: rows of given matrix chunk
+        int: columns of given matrix chunk
 */
-void solver(uint8_t*, int*, int*);
+void solver(uint8_t*, int, int);
 // Updater that works similarly to the updates done in the `fload_gen(...)` method (life.c: 74)
 /*
     Args:
-        uint8_t*: Snippet of Matrix array consisting of 2 columns - col0: west neighbours, col1: north neighbours + target cells
-        int*: size 2 array of start positions (row, col)
-        int*: size 2 array of end positions (row, col)
+        uint8_t*: Matrix array chunk
+        int: rows of given matrix chunk
+        int: columns of given matrix chunk
         **NOTE:**:
             - If the starting position is (1, 1) this is the target cell, and it will work with cells (0, 1) and (1, 0).
             - So for a call `updater(arr, (x0, y0), (x1, y1))` the arr will have to be a box with the boundries `rect(x0 - 1, y0 - 1, x1, y1)`
 */
-void updater(uint8_t*, int*, int*);
+void updater(uint8_t*, int, int);
 
 #endif
