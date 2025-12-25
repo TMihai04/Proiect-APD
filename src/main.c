@@ -52,29 +52,22 @@ int main(int argc, char** argv) {
         int rows_real = rows + 2;
         int cols_real = columns + 2;
 
+        printf("Initial generation:\n\n");
         mprint_binc(serial_buffer, rows_real, cols_real, 'X', '.');
         printf("\n---\t---\t---\n\n");
 
-        int st[2] = {1, 1};
-        int ed[2] = {10, 10};
-        uint8_t* chunk = get_chunk(serial_buffer, rows_real, cols_real, st, ed);
+        for(int gen = 0; gen < generations; gen++) {
+            next_gen_classic(serial_buffer, rows_real, cols_real);
 
-        mprint_binc(chunk, rows, columns, 'X', '.');
-        printf("\n---\t---\t---\n\n");
+            printf("Generation %d:\n\n", gen + 1);
+            mprint_binc(serial_buffer, rows_real, cols_real, 'X', '.');
+            printf("\n---\t---\t---\n\n");
+        }
 
-        solver(chunk, rows, columns);
-        mprint_binc(chunk, rows, columns, 'X', '.');
-        printf("\n---\t---\t---\n\n");
-
-        updater(chunk, rows, columns);
-        mprint_binc(chunk, rows, columns, 'X', '.');
-        printf("\n---\t---\t---\n\n");
-
-        place_chunk(serial_buffer, rows_real, cols_real, chunk, st, ed);
+        printf("End result:\n\n");
         mprint_binc(serial_buffer, rows_real, cols_real, 'X', '.');
         printf("\n---\t---\t---\n\n");
 
-        free(chunk);
         free(serial_buffer);
     }
 
