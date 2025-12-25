@@ -52,14 +52,30 @@ int main(int argc, char** argv) {
         int rows_real = rows + 2;
         int cols_real = columns + 2;
 
-        for(int i = 0; i < rows_real; i++) {
-            for(int j = 0; j < cols_real; j++) {
-                print_bin(serial_buffer[i * rows_real + j]);
-                printf(" ");
-            }
-            printf("\n");
-        }
-        printf("\n");
+        mprint_binc(serial_buffer, rows_real, cols_real, 'X', '.');
+        printf("\n---\t---\t---\n\n");
+
+        int st[2] = {1, 1};
+        int ed[2] = {10, 10};
+        uint8_t* chunk = get_chunk(serial_buffer, rows_real, cols_real, st, ed);
+
+        mprint_binc(chunk, rows, columns, 'X', '.');
+        printf("\n---\t---\t---\n\n");
+
+        solver(chunk, rows, columns);
+        mprint_binc(chunk, rows, columns, 'X', '.');
+        printf("\n---\t---\t---\n\n");
+
+        updater(chunk, rows, columns);
+        mprint_binc(chunk, rows, columns, 'X', '.');
+        printf("\n---\t---\t---\n\n");
+
+        place_chunk(serial_buffer, rows_real, cols_real, chunk, st, ed);
+        mprint_binc(serial_buffer, rows_real, cols_real, 'X', '.');
+        printf("\n---\t---\t---\n\n");
+
+        free(chunk);
+        free(serial_buffer);
     }
 
     MPI_Finalize();
