@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include "mpi.h"
 
 #include "life/life.h"
@@ -42,26 +43,23 @@ int main(int argc, char** argv) {
             MPI_Abort(MPI_COMM_WORLD, -1);
         }
 
+        // --- Serial Version ---
+
         // argv[1]: Input file name
-        
+        int rows = -1, columns = -1;
+        uint8_t* serial_buffer = fload_gen(argv[1], &rows, &columns);
 
-        // for now hardcoded
-        // char file_name[] = "inputs/bacteria10.txt";
+        int rows_real = rows + 2;
+        int cols_real = columns + 2;
 
-        // int rows = 0, columns = 0;
-        // int* buffer = fload_gen(file_name, &rows, &columns);
-
-        // int rows_real = rows + 2;
-        // int cols_real = columns + 2;
-
-        // for(int i = 0; i < rows_real; i++) {
-        //     for(int j = 0; j < cols_real; j++) {
-        //         int idx = i * cols_real + j;
-        //         printf("%d ", buffer[idx]);
-        //     }
-        //     printf("\n");
-        // }
-        // printf("\n");
+        for(int i = 0; i < rows_real; i++) {
+            for(int j = 0; j < cols_real; j++) {
+                print_bin(serial_buffer[i * rows_real + j]);
+                printf(" ");
+            }
+            printf("\n");
+        }
+        printf("\n");
     }
 
     MPI_Finalize();
