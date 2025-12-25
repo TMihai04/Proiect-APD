@@ -49,6 +49,7 @@ uint8_t* fload_gen(char*, int*, int*);
         int: columns of given matrix chunk
 */
 void solver(uint8_t*, int, int);
+void usolver(uint8_t*, int, int);
 // Updater that works similarly to the updates done in the `fload_gen(...)` method (life.c: 74)
 /*
     Args:
@@ -60,5 +61,7 @@ void solver(uint8_t*, int, int);
             - So for a call `updater(arr, (x0, y0), (x1, y1))` the arr will have to be a box with the boundries `rect(x0 - 1, y0 - 1, x1, y1)`
 */
 void updater(uint8_t*, int, int);
+
+void next_gen_classic(uint8_t*, int, int);
 
 #endif

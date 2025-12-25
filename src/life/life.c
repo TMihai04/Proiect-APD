@@ -138,7 +138,7 @@ uint8_t* fload_gen(
         }
 
         line_len = strlen(line);
-        printf("line: %s\nlen:%d\n\n", line, line_len);
+        // printf("line: %s\nlen:%d\n\n", line, line_len);
         for(int i = 0; i < line_len; i++) {
             int idx = rw * cols_real + cl;
             int idx_w = rw * cols_real + (cl - 1);
@@ -187,6 +187,13 @@ void solver(uint8_t* cells, int rows, int cols) {
 }
 
 
+// Exact same functionality as the solver, except it calls the updater at the end
+void usolver(uint8_t* cells, int rows, int cols) {
+    solver(cells, rows, cols);
+    updater(cells, rows, cols);
+}
+
+
 void updater(uint8_t* cells, int rows, int cols) {
     // row = 0 and col = 0 is the "bandaid" from the other operation, so we start from row = 1, col = 1
     for(int i = 1; i < rows; i++) {
@@ -196,8 +203,62 @@ void updater(uint8_t* cells, int rows, int cols) {
             int idx_w = i * cols + (j - 1);
 
             cells[idx] = IS_ALIVE(cells[idx]) | (CELL_NORTH * IS_ALIVE(cells[idx_n])) | (CELL_WEST * IS_ALIVE(cells[idx_w]));
-            cells[idx_n] |= CELL_SOUTH * IS_ALIVE(cells[idx]);
-            cells[idx_w] |= CELL_EAST * IS_ALIVE(cells[idx]);
+            cells[idx_n] = (cells[idx_n] & ~CELL_SOUTH) |  (CELL_SOUTH * IS_ALIVE(cells[idx]));
+            cells[idx_w] = (cells[idx_w] & ~CELL_EAST) | (CELL_EAST * IS_ALIVE(cells[idx]));
         }
     }
+}
+
+
+// Senquential solver for a next generation. Needs the whole buffer. In-place operation
+void next_gen_classic(uint8_t* buffer, int buff_rows, int buff_cols) {
+    int wz_rows = buff_rows - 2;
+    int wz_cols = buff_cols - 2;
+
+    int from[2] = {1, 1};
+    int to[2] = {wz_cols, wz_rows};
+    uint8_t* work_zone = get_chunk(buffer, buff_rows, buff_cols, from, to);
+
+    usolver(work_zone, wz_rows, wz_cols);
+    place_chunk(buffer, buff_rows, buff_cols, work_zone, from, to);
+
+    free(work_zone);
+
+    // vertical
+    from[0] = 0; // x0
+    from[1] = 0; // y0
+    to[0] = 2; // x1
+    to[1] = wz_rows + 1; // y1
+    uint8_t* patch = get_chunk(buffer, buff_rows, buff_cols, from, to);
+    // printf("Patch vertical:\n");
+    // mprint_binc(patch, wz_rows + 1, 2, 'X', '.');
+    // printf("\n---\t---\t---\n\n");
+
+    updater(patch, wz_rows + 2, 3);
+    from[0] = 1; from[1] = 1;
+    to[0] = 1; to[1] = wz_rows;
+    uint8_t* patch_chunk = get_chunk(patch, wz_rows + 2, 3, from, to);
+    place_chunk(buffer, buff_rows, buff_cols, patch_chunk, from, to);
+
+    free(patch);
+    free(patch_chunk);
+
+    // mprint_binc(patch, wz_rows + 1, 2, 'X', '.');
+    // printf("\n---\t---\t---\n\n");
+    
+    // horizontal
+    from[0] = 0; // x0
+    from[1] = 0; // y0
+    to[0] = wz_cols + 1; // x1
+    to[1] = 2; // y1
+    patch = get_chunk(buffer, buff_rows, buff_cols, from, to);
+
+    updater(patch, 3, wz_cols + 2);
+    from[0] = 1; from[1] = 1;
+    to[0] = wz_cols; to[1] = 1;
+    patch_chunk = get_chunk(patch, 3, wz_cols + 2, from, to); 
+    place_chunk(buffer, buff_rows, buff_cols, patch_chunk, from, to);
+
+    free(patch);
+    free(patch_chunk);
 }
