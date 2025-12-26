@@ -6,6 +6,8 @@
 
 #include "life/life.h"
 
+#define DEBUG
+
 /*
     Compile:
     gcc -Wall -g src/main.c src/life/life.h src/life/life.c -I "c:\Program Files (x86)\Microsoft SDKs\MPI\Include" -L "c:\Program Files (x86)\Microsoft SDKs\MPI\Lib\x64" -lmsmpi -o life_mpi.exe
@@ -56,17 +58,25 @@ int main(int argc, char** argv) {
         mprint_binc(serial_buffer, rows_real, cols_real, 'X', '.');
         printf("\n---\t---\t---\n\n");
 
+        float tstart_serial = MPI_Wtime();
         for(int gen = 0; gen < generations; gen++) {
-            next_gen_classic(serial_buffer, rows_real, cols_real);
+            next_gen(serial_buffer, rows_real, cols_real);
 
+            #ifdef DEBUG
             printf("Generation %d:\n\n", gen + 1);
             mprint_binc(serial_buffer, rows_real, cols_real, 'X', '.');
             printf("\n---\t---\t---\n\n");
+            #endif
         }
+        float tend_serial = MPI_Wtime();
 
-        printf("End result:\n\n");
+        float telapsed_serial = tend_serial - tstart_serial;
+        printf("End result:\n");
+        printf("* Time elapsed: %f [s]\n\n", telapsed_serial);
         mprint_binc(serial_buffer, rows_real, cols_real, 'X', '.');
         printf("\n---\t---\t---\n\n");
+
+        fwrite_gen(".\\outputs\\bacteria10\\bacteria10_serial.txt", serial_buffer, rows_real, cols_real, telapsed_serial);
 
         free(serial_buffer);
     }
