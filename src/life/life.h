@@ -31,14 +31,19 @@
 /* Utils */
 // void swap(void*, void*);
 void swapp(void**, void**);
+
 void print_bin(uint8_t);
 void print_binc(uint8_t, char, char);
 void mprint_binc(uint8_t*, int, int, char, char);
+
 uint8_t* get_chunk(uint8_t*, int, int, int*, int*);
 void place_chunk(uint8_t*, int, int, uint8_t*, int*, int*);
 
+void validate_path(char*);
+
 /* I/O */
 uint8_t* fload_gen(char*, int*, int*);
+void fwrite_gen(char*, uint8_t*, int, int, float);
 
 /* Work */
 // In place solver, using the per cell data and the two above macros
@@ -61,7 +66,6 @@ void usolver(uint8_t*, int, int);
             - So for a call `updater(arr, (x0, y0), (x1, y1))` the arr will have to be a box with the boundries `rect(x0 - 1, y0 - 1, x1, y1)`
 */
 void updater(uint8_t*, int, int);
-
-void next_gen_classic(uint8_t*, int, int);
+void next_gen(uint8_t*, int, int);
 
 #endif

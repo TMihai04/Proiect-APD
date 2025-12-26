@@ -3,6 +3,7 @@
 #include <string.h>
 #include <errno.h>
 #include <stdint.h>
+#include <sys/stat.h>
 
 #include "life.h"
 
@@ -99,6 +100,61 @@ void place_chunk(
 }
 
 
+// Validates the path given up to the filename. Relative paths to the executable's location ONLY
+void validate_path(char* path) {
+    char delims[] = "/\\";
+    char* token = strtok(path, delims);
+    fflush(stdout);
+    int path_len = 1;
+    char* rebuilt_path = calloc(1, sizeof(char));
+    if(!rebuilt_path) {
+        perror("Error allocating space for path");
+        exit(errno);
+    }
+    rebuilt_path[0] = '\0';
+
+    while(token) {
+        // printf("%s -> %s\n", rebuilt_path, token);
+        fflush(stdout);
+        if(strchr(token, '.') && strlen(token) > 1) {
+            break;
+        }
+
+        path_len += strlen(token) + 1;
+        rebuilt_path = realloc(rebuilt_path, path_len);
+        if(!rebuilt_path) {
+            perror("Error allocating space for path");
+            exit(errno);
+        }
+
+        strcat(rebuilt_path, token);
+        #ifdef _WIN32 // Check if code is run on Windows
+        strcat(rebuilt_path, "\\");
+        #else // Presume if not Windows, then Linux
+        strcat(rebuilt_path, "/");
+        #endif
+
+        struct stat sb;
+        if(stat(rebuilt_path, &sb) != 0 || !S_ISDIR(sb.st_mode)) {
+            int mkdir_err = 0;
+            #ifdef _WIN32
+            mkdir_err = mkdir(rebuilt_path);
+            #else
+            mkdir_err = mkdir(rebuilt_path, 0700);
+            #endif
+            if(mkdir_err != 0) {
+                perror("Error creating specified output path");
+                exit(errno);
+            }
+        }
+
+        token = strtok(NULL, delims);
+    }
+
+    free(rebuilt_path);
+}
+
+
 // Loads a generation into an array (interpreted as a matrix, with a buffer of 0's of size 1), and passes the number of rows and columns as parameters (this does not take into account the 0 buffer)
 uint8_t* fload_gen(
     char* in_file_name, // Input file's name
@@ -176,6 +232,42 @@ uint8_t* fload_gen(
 }
 
 
+// Method that writes the given cell buffer to a given file. Ouput will look similar to the input. This method writes the whole given buffer, so padding should be removed before if unwanted.
+void fwrite_gen(
+    char* out_file_name,
+    uint8_t* cells,
+    int rows,
+    int cols,
+    float t_elapsed // Optional parameter. If <0, will be ignored
+) {
+    char file_path[strlen(out_file_name) + 1];
+    strcpy(file_path, out_file_name);
+    validate_path(file_path);
+
+    FILE* out_file = fopen(out_file_name, "w");
+    if(!out_file) {
+        perror("Error opening output file");
+        exit(errno);
+    }
+
+    // Prints time if given
+    if(t_elapsed >= 0) {
+        fprintf(out_file, "%f\n", t_elapsed);
+    }
+
+    for(int i = 0; i < rows; i++) {
+        for(int j = 0; j < cols; j++) {
+            int idx = i * cols + j;
+
+            fprintf(out_file, "%c", IS_ALIVE(cells[idx]) ? 'X' : '.');
+        }
+        fprintf(out_file, "\n");
+    }
+
+    fclose(out_file);
+}
+
+
 // Solver for the next generation. In place modifications
 void solver(uint8_t* cells, int rows, int cols) {
     for(int i = 0; i < rows; i++) {
@@ -211,54 +303,26 @@ void updater(uint8_t* cells, int rows, int cols) {
 
 
 // Senquential solver for a next generation. Needs the whole buffer. In-place operation
-void next_gen_classic(uint8_t* buffer, int buff_rows, int buff_cols) {
-    int wz_rows = buff_rows - 2;
-    int wz_cols = buff_cols - 2;
+void next_gen(uint8_t* buffer, int buff_rows, int buff_cols) {
+    int from[] = {0, 0};
+    int to[] = {buff_cols - 1, buff_rows - 1};
+    // Gets work area = cells + padding
+    uint8_t* work_area = get_chunk(buffer, buff_rows, buff_cols, from, to);
 
-    int from[2] = {1, 1};
-    int to[2] = {wz_cols, wz_rows};
-    uint8_t* work_zone = get_chunk(buffer, buff_rows, buff_cols, from, to);
+    // Solver works on the whole buffer
+    solver(work_area, buff_rows, buff_cols);
+    // Updates just the cells, since padding doesn't matter
+    updater(work_area, buff_rows, buff_cols);
 
-    usolver(work_zone, wz_rows, wz_cols);
-    place_chunk(buffer, buff_rows, buff_cols, work_zone, from, to);
-
-    free(work_zone);
-
-    // vertical
-    from[0] = 0; // x0
-    from[1] = 0; // y0
-    to[0] = 2; // x1
-    to[1] = wz_rows + 1; // y1
-    uint8_t* patch = get_chunk(buffer, buff_rows, buff_cols, from, to);
-    // printf("Patch vertical:\n");
-    // mprint_binc(patch, wz_rows + 1, 2, 'X', '.');
-    // printf("\n---\t---\t---\n\n");
-
-    updater(patch, wz_rows + 2, 3);
     from[0] = 1; from[1] = 1;
-    to[0] = 1; to[1] = wz_rows;
-    uint8_t* patch_chunk = get_chunk(patch, wz_rows + 2, 3, from, to);
-    place_chunk(buffer, buff_rows, buff_cols, patch_chunk, from, to);
+    to[0] = buff_cols - 2; to[1] = buff_rows - 2;
+    // Gets updated cells
+    uint8_t* truth = get_chunk(work_area, buff_rows, buff_cols, from, to);
 
-    free(patch);
-    free(patch_chunk);
+    // Replaces the cells in the buffer
+    place_chunk(buffer, buff_rows, buff_cols, truth, from, to);
 
-    // mprint_binc(patch, wz_rows + 1, 2, 'X', '.');
-    // printf("\n---\t---\t---\n\n");
-    
-    // horizontal
-    from[0] = 0; // x0
-    from[1] = 0; // y0
-    to[0] = wz_cols + 1; // x1
-    to[1] = 2; // y1
-    patch = get_chunk(buffer, buff_rows, buff_cols, from, to);
-
-    updater(patch, 3, wz_cols + 2);
-    from[0] = 1; from[1] = 1;
-    to[0] = wz_cols; to[1] = 1;
-    patch_chunk = get_chunk(patch, 3, wz_cols + 2, from, to); 
-    place_chunk(buffer, buff_rows, buff_cols, patch_chunk, from, to);
-
-    free(patch);
-    free(patch_chunk);
+    // Clean-up
+    free(work_area);
+    free(truth);
 }
