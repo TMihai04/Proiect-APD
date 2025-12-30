@@ -13,6 +13,18 @@
     gcc -Wall -g src/main.c src/life/life.h src/life/life.c -I "c:\Program Files (x86)\Microsoft SDKs\MPI\Include" -L "c:\Program Files (x86)\Microsoft SDKs\MPI\Lib\x64" -lmsmpi -o life_mpi.exe
 */
 
+
+int rows = -1, columns = -1;
+int rows_real = -1, cols_real = -1;
+uint8_t* serial_buffer = NULL;
+uint8_t* parallel_1d_buffer = NULL;
+uint8_t* parallel_2d_buffer = NULL;
+
+int init_from[2], init_to[2];
+float tstart = -1, tend = -1, telapsed = 1;
+char* output_path = NULL;
+
+
 void usage(char* prg) {
     printf("Usage:mpiexec -n <prc_cnt> %s <file_in> <num_gens>\n", prg);
     fflush(stdout);
@@ -28,6 +40,7 @@ int main(int argc, char** argv) {
     int comm_size = -1;
     MPI_Comm_size(MPI_COMM_WORLD, &comm_size);
 
+    // Main Process
     if(rank == 0) {
         if(argc != 3) {
             usage(argv[0]);
@@ -45,20 +58,40 @@ int main(int argc, char** argv) {
             MPI_Abort(MPI_COMM_WORLD, -1);
         }
 
-        // --- Serial Version ---
-
         // argv[1]: Input file name
-        int rows = -1, columns = -1;
-        uint8_t* serial_buffer = fload_gen(argv[1], &rows, &columns);
+        serial_buffer = fload_gen(argv[1], &rows, &columns);
 
-        int rows_real = rows + 2;
-        int cols_real = columns + 2;
+        rows_real = rows + 2;
+        cols_real = columns + 2;
+
+        init_from[0] = 0; init_from[1] = 0;
+        init_to[0] = cols_real - 1; init_to[1] = rows_real - 1;
+
+        parallel_1d_buffer = get_chunk(serial_buffer, rows_real, cols_real, init_from, init_to);
+        parallel_2d_buffer = get_chunk(serial_buffer, rows_real, cols_real, init_from, init_to);
+
+        #ifdef DEBUG
+        printf("Initial generation serial:\n\n");
+        mprint_binc(serial_buffer, rows_real, cols_real, 'X', '.');
+        printf("\n---\t---\t---\n\n");
+
+        printf("Initial generation parallel 1d:\n\n");
+        mprint_binc(serial_buffer, rows_real, cols_real, 'X', '.');
+        printf("\n---\t---\t---\n\n");
+
+        printf("Initial generation parallel 2d:\n\n");
+        mprint_binc(serial_buffer, rows_real, cols_real, 'X', '.');
+        printf("\n---\t---\t---\n\n");
+        #endif
+
+        // --- Serial Version ---
+        printf("\n\n-------\tSERIAL VERSION\t-------\n\n");
 
         printf("Initial generation:\n\n");
         mprint_binc(serial_buffer, rows_real, cols_real, 'X', '.');
         printf("\n---\t---\t---\n\n");
 
-        float tstart_serial = MPI_Wtime();
+        tstart = MPI_Wtime();
         for(int gen = 0; gen < generations; gen++) {
             next_gen(serial_buffer, rows_real, cols_real);
 
@@ -68,17 +101,33 @@ int main(int argc, char** argv) {
             printf("\n---\t---\t---\n\n");
             #endif
         }
-        float tend_serial = MPI_Wtime();
+        tend = MPI_Wtime();
 
-        float telapsed_serial = tend_serial - tstart_serial;
+        telapsed = tend - tstart;
         printf("End result:\n");
-        printf("* Time elapsed: %f [s]\n\n", telapsed_serial);
+        printf("* Time elapsed: %f [s]\n\n", telapsed);
         mprint_binc(serial_buffer, rows_real, cols_real, 'X', '.');
         printf("\n---\t---\t---\n\n");
 
-        fwrite_gen(".\\outputs\\bacteria10\\bacteria10_serial.txt", serial_buffer, rows_real, cols_real, telapsed_serial);
+        output_path = get_output_path(argv[1], "serial");
+        fwrite_gen(output_path, serial_buffer, rows_real, cols_real, telapsed);
+        free(output_path);
+
+        // -- Parallel version 1 - 1D data decomposition --
+        printf("\n\n-------\tPARALLEL VERSION - 1D\t-------\n\n");
+
+
+        // -- Parallel version 1 - 2D data decomposition --
+        printf("\n\n-------\tPARALLEL VERSION - 2D\t-------\n\n");
+
 
         free(serial_buffer);
+        free(parallel_1d_buffer);
+        free(parallel_2d_buffer);
+    }
+    // Worker processes
+    else {
+
     }
 
     MPI_Finalize();
