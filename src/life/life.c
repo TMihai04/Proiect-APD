@@ -16,6 +16,19 @@ void swapp(void** a, void** b) {
 }
 
 
+// Compares each element of `m1` with its corresponding element from `m2`. If all element pairs are equal, returns 1, otherwise 0. This method does not account for any padding, so use it accordingly
+int mequal(uint8_t* m1, uint8_t* m2, int rows, int cols) {
+    for(int i = 0; i < rows; i++) {
+        for(int j = 0; j < cols; j++) {
+            int idx = i * rows + j;
+            
+            if(m1[idx] != m2[idx]) return 0;
+        }
+    }
+    return 1;
+}
+
+
 void print_bin(uint8_t num) {
     for(int i = 7; i >= 0; i--) {
         printf("%d", num & (1 << i) ? 1 : 0);
@@ -152,6 +165,83 @@ void validate_path(char* path) {
     }
 
     free(rebuilt_path);
+}
+
+
+// NOTE: Do NOT forget to free the returned pointer
+char* get_output_path(char* in_name, char* type) {
+    char* win_sep = "\\";
+    char* unix_sep = "/";
+
+    // printf("start\n");
+    // fflush(stdout);
+
+    char* where = strrchr(in_name, '/');
+    if(!where) {
+        where = strrchr(in_name, '\\'); 
+    }
+
+    // printf("%s\n", where);
+    // fflush(stdout);
+
+    char in_name_no_prefix[strlen(in_name)];
+    strcpy(in_name_no_prefix, where + 1);
+
+    // printf("%s\n", in_name_no_prefix);
+    // fflush(stdout);
+
+    where = strrchr(in_name_no_prefix, '.');
+    int how_much = where - in_name_no_prefix;
+
+    char name_no_suffix[strlen(in_name)];
+    strncpy(name_no_suffix, in_name_no_prefix, how_much);
+
+    // printf("%s\n", name_no_suffix);
+    // fflush(stdout);
+
+    char name_type[strlen(name_no_suffix) + 1 + strlen(type) + 1];
+    name_type[0] = '\0';
+    strcat(name_type, name_no_suffix);
+    strcat(name_type, "_");
+    strcat(name_type, type);
+
+    // len(".") + len(<sep>) + len(OUT_DIR) + len(<sep>) + len(name_no_suffix) + len(<sep>) + len(in_name) + len(suffix) + len("\0")
+    int path_len = 1 + 1 + strlen(OUT_DIR) + 1 + strlen(name_no_suffix) + 1 + strlen(name_type) + strlen(where) + 1;
+    char* ret = calloc(path_len, sizeof(char));
+    if(!ret) {
+        perror("Error getting path allocation");
+        exit(errno);
+    }
+    ret[0] = '\0';
+
+    strcat(ret, ".");
+
+    #ifdef _WIN32
+    strcat(ret, win_sep);
+    #else
+    strcat(ret, unix_sep);
+    #endif
+
+    strcat(ret, OUT_DIR);
+
+    #ifdef _WIN32
+    strcat(ret, win_sep);
+    #else
+    strcat(ret, unix_sep);
+    #endif
+
+    strcat(ret, name_no_suffix);
+
+    #ifdef _WIN32
+    strcat(ret, win_sep);
+    #else
+    strcat(ret, unix_sep);
+    #endif
+
+    strcat(ret, name_type);
+    strcat(ret, where);
+
+    return ret;
 }
 
 

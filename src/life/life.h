@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #define IN_CHUNK 1024
+#define OUT_DIR "outputs"
 
 /* Constants */
 #define CELL_ALIVE  0b00000001
@@ -31,6 +32,7 @@
 /* Utils */
 // void swap(void*, void*);
 void swapp(void**, void**);
+int mequal(uint8_t*, uint8_t*, int, int);
 
 void print_bin(uint8_t);
 void print_binc(uint8_t, char, char);
@@ -40,6 +42,7 @@ uint8_t* get_chunk(uint8_t*, int, int, int*, int*);
 void place_chunk(uint8_t*, int, int, uint8_t*, int*, int*);
 
 void validate_path(char*);
+char* get_output_path(char*, char*);
 
 /* I/O */
 uint8_t* fload_gen(char*, int*, int*);
