@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <stdint.h>
 #include <sys/stat.h>
+#include <math.h>
 
 #include "life.h"
 
@@ -26,6 +27,19 @@ int mequal(uint8_t* m1, uint8_t* m2, int rows, int cols) {
         }
     }
     return 1;
+}
+
+
+/* Prints the 2 points that define the area */
+void print_area(area_t area) {
+    fprintf(stdout, "(%d, %d), (%d, %d)\n", area.from[0], area.from[1], area.to[0], area.to[1]);
+}
+
+
+void print_areas(area_t* areas, int len) {
+    for(int i = 0; i < len; i++) {
+        print_area(areas[i]);
+    }
 }
 
 
@@ -416,3 +430,35 @@ void next_gen(uint8_t* buffer, int buff_rows, int buff_cols) {
     free(work_area);
     free(truth);
 }
+
+
+/*
+    Creates the job buffer for the 1D parallel version.
+    Last block might not have the same size as the rest.
+    Work areas are 1 indexed, as to take into account the padding from the big.
+*/
+area_t* create_jobs_1d(int rows, int columns, int workers, int* job_cnt) {
+    int nblocks = MIN(workers, rows);
+    int block_height = rows / nblocks;
+
+    area_t* blocks = calloc(nblocks, sizeof(area_t));
+    if(!blocks) {
+        perror("Error allocating memory for jobs list (1D)");
+        exit(errno);
+    }
+
+    int i = 0;
+    for(i = 0; i < nblocks - 1; i++) {
+        blocks[i] = (area_t) {from: {1, i * block_height + 1}, to: {columns, (i + 1) * block_height}};
+    }
+    blocks[i] = (area_t) {from: {1, i * block_height + 1}, to: {columns, rows}};
+
+    *job_cnt = nblocks;
+    return blocks;
+}
+
+
+area_t* create_jobs_2d(int rows, int columns, int workers, int* job_cnt) {
+    return NULL;
+}
+

@@ -13,6 +13,10 @@
 #define CELL_EAST   0b00001000
 #define CELL_SOUTH  0b00010000
 
+#define PARALLEL_1D_TAG 69
+#define PARALLEL_2D_TAG 420
+#define DONE_TAG        1337
+
 /* Macros */
 // 0x01 if active / has neighbour, 0x00 otherwise
 #define IS_ALIVE(cell) (cell & CELL_ALIVE)
@@ -25,28 +29,37 @@
 // Minterms: 7,11,13,14,15,19,21,22,23,25,26,27,28,29
 #define MAKE_ALIVE(cell) ((~HAS_SOUTH(cell) & HAS_EAST(cell) & HAS_NORTH(cell) & HAS_WEST(cell)) | (HAS_SOUTH(cell) & ~HAS_EAST(cell) & HAS_NORTH(cell) & HAS_WEST(cell)) | (HAS_SOUTH(cell) & HAS_EAST(cell) & ~HAS_NORTH(cell) & HAS_WEST(cell)) | (HAS_SOUTH(cell) & HAS_EAST(cell) & HAS_NORTH(cell) & ~HAS_WEST(cell)) | (~HAS_SOUTH(cell) & HAS_NORTH(cell) & HAS_WEST(cell) & IS_ALIVE(cell)) | (~HAS_SOUTH(cell) & HAS_EAST(cell) & HAS_WEST(cell) & IS_ALIVE(cell)) | (~HAS_SOUTH(cell) & HAS_EAST(cell) & HAS_NORTH(cell) & IS_ALIVE(cell)) | (HAS_SOUTH(cell) & ~HAS_EAST(cell) & HAS_WEST(cell) & IS_ALIVE(cell)) | (HAS_SOUTH(cell) & ~HAS_EAST(cell) & HAS_NORTH(cell) & IS_ALIVE(cell)) | (HAS_SOUTH(cell) & HAS_EAST(cell) & ~HAS_NORTH(cell) & IS_ALIVE(cell)))
 
-// Same rules
-// Is just the negation of the above logical expression
-#define MAKE_DEAD(cell) ( (HAS_SOUTH(cell) | HAS_EAST(cell) | HAS_NORTH(cell)) & (HAS_SOUTH(cell) | HAS_EAST(cell) | HAS_WEST(cell)) & (HAS_SOUTH(cell) | HAS_EAST(cell) | IS_ALIVE(cell)) & (HAS_SOUTH(cell) | HAS_NORTH(cell) | HAS_WEST(cell)) & (HAS_SOUTH(cell) | HAS_NORTH(cell) | IS_ALIVE(cell)) & (HAS_SOUTH(cell) | HAS_WEST(cell) | IS_ALIVE(cell)) & (HAS_EAST(cell) | HAS_NORTH(cell) | HAS_WEST(cell)) & (HAS_EAST(cell) | HAS_NORTH(cell) | IS_ALIVE(cell)) & (HAS_EAST(cell) | HAS_WEST(cell) | IS_ALIVE(cell)) & (HAS_NORTH(cell) | HAS_WEST(cell) | IS_ALIVE(cell)) & (~HAS_SOUTH(cell) | ~HAS_EAST(cell) | ~HAS_NORTH(cell) | ~HAS_WEST(cell)))
+#define MAX(a, b) ((a > b) ? a : b)
+#define MIN(a, b) ((a < b) ? a : b)
+
+/* Types */
+// This struct does not need to be opaque
+typedef struct _area_t {
+    int from[2];
+    int to[2];
+} area_t;
 
 /* Utils */
 // void swap(void*, void*);
-void swapp(void**, void**);
-int mequal(uint8_t*, uint8_t*, int, int);
+void swapp(void** a, void** b);
+int mequal(uint8_t* m1, uint8_t* m2, int rows, int cols);
 
-void print_bin(uint8_t);
-void print_binc(uint8_t, char, char);
-void mprint_binc(uint8_t*, int, int, char, char);
+void print_area(area_t area);
+void print_areas(area_t* areas, int len);
 
-uint8_t* get_chunk(uint8_t*, int, int, int*, int*);
-void place_chunk(uint8_t*, int, int, uint8_t*, int*, int*);
+void print_bin(uint8_t num);
+void print_binc(uint8_t num, char alive, char n_alive);
+void mprint_binc(uint8_t* mat, int rows, int cols, char alive, char n_alive);
 
-void validate_path(char*);
-char* get_output_path(char*, char*);
+uint8_t* get_chunk(uint8_t* buffer, int rows, int columns, int* start, int* end);
+void place_chunk(uint8_t* buffer, int rows, int columns, uint8_t* chunk, int* start, int* end);
+
+void validate_path(char* path);
+char* get_output_path(char* in_name, char* type);
 
 /* I/O */
-uint8_t* fload_gen(char*, int*, int*);
-void fwrite_gen(char*, uint8_t*, int, int, float);
+uint8_t* fload_gen(char* in_file_name, int* rows, int* columns);
+void fwrite_gen(char* out_file_name, uint8_t* cells, int rows, int cols, float t_elapsed);
 
 /* Work */
 // In place solver, using the per cell data and the two above macros
@@ -56,8 +69,8 @@ void fwrite_gen(char*, uint8_t*, int, int, float);
         int: rows of given matrix chunk
         int: columns of given matrix chunk
 */
-void solver(uint8_t*, int, int);
-void usolver(uint8_t*, int, int);
+void solver(uint8_t* cells, int rows, int cols);
+void usolver(uint8_t* cells, int rows, int cols);
 // Updater that works similarly to the updates done in the `fload_gen(...)` method (life.c: 74)
 /*
     Args:
@@ -68,7 +81,10 @@ void usolver(uint8_t*, int, int);
             - If the starting position is (1, 1) this is the target cell, and it will work with cells (0, 1) and (1, 0).
             - So for a call `updater(arr, (x0, y0), (x1, y1))` the arr will have to be a box with the boundries `rect(x0 - 1, y0 - 1, x1, y1)`
 */
-void updater(uint8_t*, int, int);
-void next_gen(uint8_t*, int, int);
+void updater(uint8_t* cells, int rows, int cols);
+void next_gen(uint8_t* buffer, int buff_rows, int buff_cols);
+
+area_t* create_jobs_1d(int rows, int columns, int workers, int* job_cnt);
+area_t* create_jobs_2d(int rows, int columns, int workers, int* job_cnt);
 
 #endif
