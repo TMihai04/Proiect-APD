@@ -14,6 +14,9 @@
 */
 
 
+int rank = -1;
+int comm_size = -1, worker_cnt = -1;
+
 int rows = -1, columns = -1;
 int rows_real = -1, cols_real = -1;
 uint8_t* serial_buffer = NULL;
@@ -23,6 +26,9 @@ uint8_t* parallel_2d_buffer = NULL;
 int init_from[2], init_to[2];
 float tstart = -1, tend = -1, telapsed = 1;
 char* output_path = NULL;
+
+int job_1d_cnt = -1;
+area_t* jobs_1d = NULL;
 
 
 void usage(char* prg) {
@@ -34,16 +40,21 @@ void usage(char* prg) {
 int main(int argc, char** argv) {
     MPI_Init(&argc, &argv);
 
-    int rank = -1;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    int comm_size = -1;
     MPI_Comm_size(MPI_COMM_WORLD, &comm_size);
+    worker_cnt = comm_size - 1;
 
     // Main Process
     if(rank == 0) {
         if(argc != 3) {
             usage(argv[0]);
+            MPI_Abort(MPI_COMM_WORLD, 0);
+        }
+
+        if(comm_size < 2) {
+            printf("At least 2 processes needed. Got %d instead\n", comm_size);
+            fflush(stdout);
             MPI_Abort(MPI_COMM_WORLD, 0);
         }
 
@@ -115,10 +126,27 @@ int main(int argc, char** argv) {
 
         // -- Parallel version 1 - 1D data decomposition --
         printf("\n\n-------\tPARALLEL VERSION - 1D\t-------\n\n");
+        jobs_1d = create_jobs_1d(rows, columns, worker_cnt, &job_1d_cnt);
+        print_areas(jobs_1d, job_1d_cnt);
+        free(jobs_1d);
+
+        for(int i = 0; i < worker_cnt; i++) {
+            MPI_Send(NULL, 0, MPI_INT, i + 1, PARALLEL_1D_TAG, MPI_COMM_WORLD);
+        }
 
 
         // -- Parallel version 1 - 2D data decomposition --
         printf("\n\n-------\tPARALLEL VERSION - 2D\t-------\n\n");
+
+        for(int i = 0; i < worker_cnt; i++) {
+            MPI_Send(NULL, 0, MPI_INT, i + 1, PARALLEL_2D_TAG, MPI_COMM_WORLD);
+        }
+
+
+        // -- Clean-up the workspace --
+        for(int i = 0; i < worker_cnt; i++) {
+            MPI_Send(NULL, 0, MPI_INT, i + 1, DONE_TAG, MPI_COMM_WORLD);
+        }
 
 
         free(serial_buffer);
@@ -127,7 +155,34 @@ int main(int argc, char** argv) {
     }
     // Worker processes
     else {
+        MPI_Status mode_status;
 
+        while(true) {
+            MPI_Recv(NULL, 0, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD, &mode_status);
+
+            switch(mode_status.MPI_TAG) {
+                case PARALLEL_1D_TAG:
+                    printf("Parallel mode 1d - [%d]\n", rank);
+                    fflush(stdout);
+                    break;
+                case PARALLEL_2D_TAG:
+                    printf("Parallel mode 2d - [%d]\n", rank);
+                    fflush(stdout);
+                    break;
+                case DONE_TAG:
+                    printf("DONE! - [%d]\n", rank);
+                    fflush(stdout);
+                    goto done;
+            }
+        }
+
+        done:
+            printf("Exited while loop - [%d]\n", rank);
+            fflush(stdout);
+        // -- Parallel version 1 - 1D data decomposition --
+
+
+        // -- Parallel version 1 - 2D data decomposition --
     }
 
     MPI_Finalize();
