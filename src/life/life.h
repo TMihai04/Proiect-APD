@@ -15,7 +15,11 @@
 
 #define PARALLEL_1D_TAG 69
 #define PARALLEL_2D_TAG 420
+#define WAIT_TAG        80085
 #define DONE_TAG        1337
+
+#define HEADER_TAG      0
+#define DATA_TAG        1
 
 /* Macros */
 // 0x01 if active / has neighbour, 0x00 otherwise
@@ -31,6 +35,9 @@
 
 #define MAX(a, b) ((a > b) ? a : b)
 #define MIN(a, b) ((a < b) ? a : b)
+
+/* Debug */
+extern int _ldebug;
 
 /* Types */
 // This struct does not need to be opaque
@@ -86,5 +93,7 @@ void next_gen(uint8_t* buffer, int buff_rows, int buff_cols);
 
 area_t* create_jobs_1d(int rows, int columns, int workers, int* job_cnt);
 area_t* create_jobs_2d(int rows, int columns, int workers, int* job_cnt);
+
+void worker_parallel_1d(int rank, int nworkers);
 
 #endif

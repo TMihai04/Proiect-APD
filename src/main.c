@@ -2,11 +2,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-#include "mpi.h"
+#include <mpi.h>
 
 #include "life/life.h"
 
-#define DEBUG
+// #define DEBUG
 
 /*
     Compile:
@@ -28,7 +28,9 @@ float tstart = -1, tend = -1, telapsed = 1;
 char* output_path = NULL;
 
 int job_1d_cnt = -1;
+int job_2d_cnt = -1;
 area_t* jobs_1d = NULL;
+area_t* jobs_2d = NULL;
 
 
 void usage(char* prg) {
@@ -98,9 +100,11 @@ int main(int argc, char** argv) {
         // --- Serial Version ---
         printf("\n\n-------\tSERIAL VERSION\t-------\n\n");
 
+        #ifdef DEBUG
         printf("Initial generation:\n\n");
         mprint_binc(serial_buffer, rows_real, cols_real, 'X', '.');
         printf("\n---\t---\t---\n\n");
+        #endif
 
         tstart = MPI_Wtime();
         for(int gen = 0; gen < generations; gen++) {
@@ -117,7 +121,9 @@ int main(int argc, char** argv) {
         telapsed = tend - tstart;
         printf("End result:\n");
         printf("* Time elapsed: %f [s]\n\n", telapsed);
+        #ifdef DEBUG
         mprint_binc(serial_buffer, rows_real, cols_real, 'X', '.');
+        #endif
         printf("\n---\t---\t---\n\n");
 
         output_path = get_output_path(argv[1], "serial");
@@ -126,26 +132,127 @@ int main(int argc, char** argv) {
 
         // -- Parallel version 1 - 1D data decomposition --
         printf("\n\n-------\tPARALLEL VERSION - 1D\t-------\n\n");
+        fflush(stdout);
         jobs_1d = create_jobs_1d(rows, columns, worker_cnt, &job_1d_cnt);
-        print_areas(jobs_1d, job_1d_cnt);
+
+        #ifdef DEBUG
+        printf("Initial generation:\n\n");
+        mprint_binc(parallel_1d_buffer, rows_real, cols_real, 'X', '.');
+        printf("\n---\t---\t---\n\n");
+        #endif
+
+        tstart = MPI_Wtime();
+        for(int gen = 0; gen < generations; gen++) {
+            // Notifies workers of work mode
+            for(int i = 0; i < job_1d_cnt; i++) {
+                MPI_Send(&job_1d_cnt, 1, MPI_INT, i + 1, PARALLEL_1D_TAG, MPI_COMM_WORLD);
+            }
+            for(int i = job_1d_cnt; i < worker_cnt; i++) {
+                MPI_Send(&job_1d_cnt, 1, MPI_INT, i + 1, WAIT_TAG, MPI_COMM_WORLD);
+            }
+
+            // Send data to workers
+            for(int i = 0; i < job_1d_cnt; i++) {
+                int worker_id = i + 1;
+
+                int job_rows = jobs_1d[i].to[1] - jobs_1d[i].from[1] + 1;
+                MPI_Send(&job_rows, 1, MPI_INT, worker_id, HEADER_TAG, MPI_COMM_WORLD);
+
+                if(_ldebug) {
+                    printf("[master]: Sent rows to worker [%d]: %d\n", worker_id, job_rows);
+                }
+
+                int job_cols = columns;
+                MPI_Send(&job_cols, 1, MPI_INT, worker_id, HEADER_TAG, MPI_COMM_WORLD);
+
+                if(_ldebug) {
+                    printf("[master]: Sent cols to worker [%d]: %d\n", worker_id, job_cols);
+                }
+
+                uint8_t* job_data = get_chunk(parallel_1d_buffer, rows_real, cols_real, jobs_1d[i].from, jobs_1d[i].to);
+                MPI_Send(job_data, job_rows * job_cols, MPI_UINT8_T, worker_id, HEADER_TAG, MPI_COMM_WORLD);
+
+                if(_ldebug) {
+                    printf("[master]: Sent data to worker [%d]: %d (len)\n", worker_id, job_rows * job_cols);
+                }
+
+                free(job_data);
+            }
+
+            MPI_Barrier(MPI_COMM_WORLD); // Wait for solver
+
+            MPI_Barrier(MPI_COMM_WORLD); // Wait for updater
+
+            for(int i = 0; i < job_1d_cnt; i++) {
+                int worker_id = i + 1;
+
+                int job_rows = jobs_1d[i].to[1] - jobs_1d[i].from[1] + 1;
+                int job_cols = columns;
+                uint8_t* job_data = calloc(job_rows * job_cols, sizeof(uint8_t));
+                if(!job_data) {
+                    perror("Failed to allocate memory for job chunks (1D)");
+                    exit(errno);
+                }
+
+                MPI_Recv(job_data, job_rows * job_cols, MPI_UINT8_T, worker_id, DATA_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+                if(_ldebug) {
+                    printf("[master]: Received data from worker [%d]: %d (len)\n", worker_id, job_rows * job_cols);
+                }
+
+                place_chunk(parallel_1d_buffer, rows_real, cols_real, job_data, jobs_1d[i].from, jobs_1d[i].to);
+
+                free(job_data);
+            }
+
+            #ifdef DEBUG
+            printf("Generation %d:\n\n", gen + 1);
+            mprint_binc(serial_buffer, rows_real, cols_real, 'X', '.');
+            printf("\n---\t---\t---\n\n");
+            #endif
+        }
+        tend = MPI_Wtime();
+
+        telapsed = tend - tstart;
+        printf("End result:\n");
+        printf("* Time elapsed: %f [s]\n\n", telapsed);
+        #ifdef DEBUG
+        mprint_binc(serial_buffer, rows_real, cols_real, 'X', '.');
+        #endif
+        printf("\n---\t---\t---\n\n");
+
         free(jobs_1d);
 
-        for(int i = 0; i < worker_cnt; i++) {
-            MPI_Send(NULL, 0, MPI_INT, i + 1, PARALLEL_1D_TAG, MPI_COMM_WORLD);
+        int is_1d_correct = mequal(serial_buffer, parallel_1d_buffer, rows_real, cols_real);
+
+        printf("Is the 1D parallel version equal to the serial version?\n");
+        if(is_1d_correct) {
+            printf("\tYES\n\t\t:)\n");
         }
+        else {
+            printf("\tNO\n\t\t:(\n");
+        }
+        printf("\n---\t---\t---\n\n");
+        fflush(stdout);
+
+        output_path = get_output_path(argv[1], "parallel1d");
+        fwrite_gen(output_path, parallel_1d_buffer, rows_real, cols_real, telapsed);
+        free(output_path);
+
 
 
         // -- Parallel version 1 - 2D data decomposition --
         printf("\n\n-------\tPARALLEL VERSION - 2D\t-------\n\n");
+        fflush(stdout);
 
         for(int i = 0; i < worker_cnt; i++) {
-            MPI_Send(NULL, 0, MPI_INT, i + 1, PARALLEL_2D_TAG, MPI_COMM_WORLD);
+            MPI_Send(&worker_cnt, 1, MPI_INT, i + 1, PARALLEL_2D_TAG, MPI_COMM_WORLD);
         }
 
 
         // -- Clean-up the workspace --
         for(int i = 0; i < worker_cnt; i++) {
-            MPI_Send(NULL, 0, MPI_INT, i + 1, DONE_TAG, MPI_COMM_WORLD);
+            MPI_Send(&worker_cnt, 1, MPI_INT, i + 1, DONE_TAG, MPI_COMM_WORLD);
         }
 
 
@@ -156,22 +263,42 @@ int main(int argc, char** argv) {
     // Worker processes
     else {
         MPI_Status mode_status;
+        int nworkers = -1;
 
         while(true) {
-            MPI_Recv(NULL, 0, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD, &mode_status);
+            MPI_Recv(&nworkers, 1, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD, &mode_status);
 
             switch(mode_status.MPI_TAG) {
                 case PARALLEL_1D_TAG:
-                    printf("Parallel mode 1d - [%d]\n", rank);
-                    fflush(stdout);
+                    if(_ldebug) {
+                        printf("Parallel mode 1d - [%d]\n", rank);
+                        fflush(stdout);
+                    }
+                    
+                    worker_parallel_1d(rank, nworkers);
+                    
                     break;
                 case PARALLEL_2D_TAG:
-                    printf("Parallel mode 2d - [%d]\n", rank);
-                    fflush(stdout);
+                    if(_ldebug) {
+                        printf("Parallel mode 2d - [%d]\n", rank);
+                        fflush(stdout);
+                    }
+                    break;
+                case WAIT_TAG:
+                    if(_ldebug) {
+                        printf("Waiting for work - [%d]\n", rank);
+                        fflush(stdout);
+                    }
+
+                    MPI_Barrier(MPI_COMM_WORLD);
+                    MPI_Barrier(MPI_COMM_WORLD);
+
                     break;
                 case DONE_TAG:
-                    printf("DONE! - [%d]\n", rank);
-                    fflush(stdout);
+                    if(_ldebug) {
+                        printf("DONE! - [%d]\n", rank);
+                        fflush(stdout);
+                    }
                     goto done;
             }
         }
