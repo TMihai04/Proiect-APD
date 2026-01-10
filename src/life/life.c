@@ -73,7 +73,7 @@ void mprint_binc(
 ) {
     for(int i = 0; i < rows; i++) {
         for(int j = 0; j < cols; j++) {
-            print_binc(mat[i * rows + j], alive, n_alive);
+            print_binc(mat[i * cols + j], alive, n_alive);
             printf(" ");
         }
         printf("\n");
@@ -412,6 +412,9 @@ void updater(uint8_t* cells, int rows, int cols) {
 
 // Senquential solver for a next generation. Needs the whole buffer. In-place operation
 void next_gen(uint8_t* buffer, int buff_rows, int buff_cols) {
+    // solver(buffer, buff_rows, buff_cols);
+    // updater(buffer, buff_rows, buff_cols);
+
     int from[] = {0, 0};
     int to[] = {buff_cols - 1, buff_rows - 1};
     // Gets work area = cells + padding
@@ -519,7 +522,7 @@ void worker_parallel_1d(int rank, int nworkers) {
         perror("Error allocating memory for halo line");
     }
 
-    // Send up, receive down
+    // Halo up - Send up, receive down
     int from_hup[] = {0, 0};
     int to_hup[] = {cols - 1, 0};
     uint8_t* halo_up = get_chunk(data, rows, cols, from_hup, to_hup);
@@ -528,6 +531,7 @@ void worker_parallel_1d(int rank, int nworkers) {
     }
     else if(rank == nworkers) {
         MPI_Send(halo_up, cols, MPI_UINT8_T, rank - 1, DATA_TAG, MPI_COMM_WORLD);
+        memset(recv_halo, 0, sizeof(uint8_t) * cols);
     }
     else {
         MPI_Sendrecv(halo_up, cols, MPI_UINT8_T, rank - 1, DATA_TAG, 
@@ -540,12 +544,13 @@ void worker_parallel_1d(int rank, int nworkers) {
     to[0] = cols; to[1] = rows + 1;
     place_chunk(data_with_halos, rows + 2, cols + 2, recv_halo, from, to);
 
-    // Send down, receive up
+    // Halo down - Send down, receive up
     int from_hdwn[] = {0, rows - 1};
     int to_hdwn[] = {cols - 1, rows - 1};
     uint8_t* halo_down = get_chunk(data, rows, cols, from_hdwn, to_hdwn);
     if(rank == 1) {
         MPI_Send(halo_down, cols, MPI_UINT8_T, rank + 1, DATA_TAG, MPI_COMM_WORLD);
+        memset(recv_halo, 0, sizeof(uint8_t) * cols);
     }
     else if(rank == nworkers) {
         MPI_Recv(recv_halo, cols, MPI_UINT8_T, rank - 1, DATA_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);

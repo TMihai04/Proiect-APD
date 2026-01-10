@@ -54,8 +54,8 @@ int main(int argc, char** argv) {
             MPI_Abort(MPI_COMM_WORLD, 0);
         }
 
-        if(comm_size < 2) {
-            printf("At least 2 processes needed. Got %d instead\n", comm_size);
+        if(comm_size < 3) {
+            printf("At least 3 processes needed. Got %d instead\n", comm_size);
             fflush(stdout);
             MPI_Abort(MPI_COMM_WORLD, 0);
         }
@@ -134,6 +134,7 @@ int main(int argc, char** argv) {
         printf("\n\n-------\tPARALLEL VERSION - 1D\t-------\n\n");
         fflush(stdout);
         jobs_1d = create_jobs_1d(rows, columns, worker_cnt, &job_1d_cnt);
+        // print_areas(jobs_1d, job_1d_cnt);
 
         #ifdef DEBUG
         printf("Initial generation:\n\n");
