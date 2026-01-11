@@ -21,6 +21,9 @@
 #define HEADER_TAG      0
 #define DATA_TAG        1
 
+#define MINIMUM_1D      2
+#define MINIMUM_2D      4
+
 /* Macros */
 // 0x01 if active / has neighbour, 0x00 otherwise
 #define IS_ALIVE(cell) (cell & CELL_ALIVE)
@@ -92,8 +95,9 @@ void updater(uint8_t* cells, int rows, int cols);
 void next_gen(uint8_t* buffer, int buff_rows, int buff_cols);
 
 area_t* create_jobs_1d(int rows, int columns, int workers, int* job_cnt);
-area_t* create_jobs_2d(int rows, int columns, int workers, int* job_cnt);
+area_t* create_jobs_2d(int rows, int columns, int workers, int* job_cnt, int* workers_x);
 
 void worker_parallel_1d(int rank, int nworkers);
+void worker_parallel_2d(int rank, int nworkers, int workers_x);
 
 #endif

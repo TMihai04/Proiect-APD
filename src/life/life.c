@@ -465,8 +465,81 @@ area_t* create_jobs_1d(int rows, int columns, int workers, int* job_cnt) {
 }
 
 
-area_t* create_jobs_2d(int rows, int columns, int workers, int* job_cnt) {
-    return NULL;
+area_t* create_jobs_2d(int rows, int columns, int workers, int* job_cnt, int* workers_x) {
+    int blocksx = -1, blocksy = -1;
+    int maxb = -1;
+    for(int _bx = MIN((int) sqrt(workers), columns); _bx > 1; _bx--) {
+        int _by = workers / _bx;
+        if(_by > rows) _by = rows;
+
+        if(_bx * _by > maxb) {
+            maxb = _bx * _by;
+            blocksx = _bx;
+            blocksy = _by;
+        }
+    }
+    
+    int nblocks = blocksx * blocksy;
+    int block_height = rows / blocksy;
+    int block_width = columns / blocksx;
+
+    area_t* blocks = calloc(nblocks, sizeof(area_t));
+    if(!blocks) {
+        perror("Error allocating memory for jobs list (2D)");
+        exit(errno);
+    }
+
+    int i, j;
+    for(i = 0; i < blocksy - 1; i++) {
+        for(j = 0; j < blocksx - 1; j++) {
+            blocks[i * blocksx + j] = (area_t) {
+                from: {
+                    j * block_width + 1,
+                    i * block_height + 1
+                }, 
+                to: {
+                    (j + 1) * block_width,
+                    (i + 1) * block_height
+                }
+            };
+        }
+        blocks[i * blocksx + j] = (area_t) {
+            from: {
+                j * block_width + 1,
+                i * block_height + 1
+            },
+            to: {
+                columns,
+                (i + 1) * block_height
+            }
+        };
+    }
+    for(j = 0; j < blocksx - 1; j++) {
+        blocks[i * blocksx + j] = (area_t) {
+            from: {
+                j * block_width + 1,
+                i * block_height + 1
+            }, 
+            to: {
+                (j + 1) * block_width,
+                rows
+            }
+        };
+    }
+    blocks[i * blocksx + j] = (area_t) {
+            from: {
+                j * block_width + 1,
+                i * block_height + 1
+            }, 
+            to: {
+                columns, 
+                rows
+            }
+        };
+
+    *job_cnt = nblocks;
+    *workers_x = blocksx;
+    return blocks;
 }
 
 
@@ -520,6 +593,7 @@ void worker_parallel_1d(int rank, int nworkers) {
     uint8_t* recv_halo = calloc(cols, sizeof(uint8_t));
     if(!recv_halo) {
         perror("Error allocating memory for halo line");
+        exit(errno);
     }
 
     // Halo up - Send up, receive down
@@ -585,4 +659,178 @@ void worker_parallel_1d(int rank, int nworkers) {
     free(recv_halo);
 }
 
+
+void worker_parallel_2d(int rank, int nworkers, int workers_x) {
+    int rows = -1, cols = -1;
+    int workers_y = nworkers / workers_x;
+    
+    MPI_Recv(&rows, 1, MPI_INT, 0, HEADER_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    
+    if(_ldebug) {
+        printf("[%d]: Received rows from master: %d\n", rank, rows);
+        fflush(stdout);
+    }
+    
+    MPI_Recv(&cols, 1, MPI_INT, 0, HEADER_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    
+    if(_ldebug) {
+        printf("[%d]: Received cols from master: %d\n", rank, cols);
+        fflush(stdout);
+    }
+    
+    uint8_t* data = calloc(rows * cols, sizeof(uint8_t));
+    if(!data) {
+        perror("Failed to allocate space for data in worker (1D)");
+        exit(errno);
+    }
+    MPI_Recv(data, rows * cols, MPI_UINT8_T, 0, HEADER_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    
+    if(_ldebug) {
+        printf("[%d]: Received data from master: %d (len)\n", rank, rows * cols);
+        fflush(stdout);
+    }
+
+
+    solver(data, rows, cols);
+
+
+    MPI_Barrier(MPI_COMM_WORLD); // Wait for solver
+
+
+    uint8_t* data_with_halos = calloc((rows + 2) * (cols + 2), sizeof(uint8_t));
+    if(!data_with_halos) {
+        perror("Error allocating space for halos");
+        exit(errno);
+    }
+    int from[] = {1, 1};
+    int to[] = {cols, rows};
+
+    place_chunk(data_with_halos, rows + 2, cols + 2, data, from, to);
+
+    // Halos
+    uint8_t* recv_halo_row = calloc(cols, sizeof(uint8_t));
+    if(!recv_halo_row) {
+        perror("Error allocating memory for halo row");
+        exit(errno);
+    }
+
+    uint8_t* recv_halo_col = calloc(rows, sizeof(uint8_t));
+    if(!recv_halo_col) {
+        perror("Error allocating memory for halo col");
+        exit(errno);
+    }
+
+    // Determine if area is at edge
+    int is_on_first_row = rank <= workers_x ? 1 : 0;
+    int is_on_last_row = rank > workers_x * (workers_y - 1) ? 1 : 0;
+    int is_on_first_col = rank % workers_x == 1 ? 1 : 0;
+    int is_on_last_col = rank % workers_x == 0 ? 1 : 0;
+
+    // Halo up - Send up, receive down
+    int from_hup[] = {0, 0};
+    int to_hup[] = {cols - 1, 0};
+    uint8_t* halo_up = get_chunk(data, rows, cols, from_hup, to_hup);
+    if(is_on_first_row) {
+        MPI_Recv(recv_halo_row, cols, MPI_UINT8_T, rank + workers_x, DATA_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+    else if(is_on_last_row) {
+        MPI_Send(halo_up, cols, MPI_UINT8_T, rank - workers_x, DATA_TAG, MPI_COMM_WORLD);
+        memset(recv_halo_row, 0, sizeof(uint8_t) * cols);
+    }
+    else {
+        MPI_Sendrecv(halo_up, cols, MPI_UINT8_T, rank - workers_x, DATA_TAG,
+                    recv_halo_row, cols, MPI_UINT8_T, rank + workers_x, DATA_TAG,
+                    MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+    free(halo_up);
+
+    from[0] = 1; from[1] = rows + 1;
+    to[0] = cols; to[1] = rows + 1;
+    place_chunk(data_with_halos, rows + 2, cols + 2, recv_halo_row, from, to);
+
+    // Halo down - Send down, receive up
+    int from_hdwn[] = {0, rows - 1};
+    int to_hdwn[] = {cols - 1, rows - 1};
+    uint8_t* halo_dwn = get_chunk(data, rows, cols, from_hdwn, to_hdwn);
+    if(is_on_first_row) {
+        MPI_Send(halo_dwn, cols, MPI_UINT8_T, rank + workers_x, DATA_TAG, MPI_COMM_WORLD);
+        memset(recv_halo_row, 0, sizeof(uint8_t) * cols);
+    }
+    else if(is_on_last_row) {
+        MPI_Recv(recv_halo_row, cols, MPI_UINT8_T, rank - workers_x, DATA_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+    else {
+        MPI_Sendrecv(halo_dwn, cols, MPI_UINT8_T, rank + workers_x, DATA_TAG,
+                    recv_halo_row, cols, MPI_UINT8_T, rank - workers_x, DATA_TAG,
+                    MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+    free(halo_dwn);
+
+    from[0] = 1; from[1] = 0;
+    to[0] = cols; to[1] = 0;
+    place_chunk(data_with_halos, rows + 2, cols + 2, recv_halo_row, from, to);
+
+    // Halo left - Send left, receive right
+    int from_hlft[] = {0, 0};
+    int to_hlft[] = {0, rows - 1};
+    uint8_t* halo_lft = get_chunk(data, rows, cols, from_hlft, to_hlft);
+    if(is_on_first_col) {
+        MPI_Recv(recv_halo_col, rows, MPI_UINT8_T, rank + 1, DATA_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+    else if(is_on_last_col) {
+        MPI_Send(halo_lft, rows, MPI_UINT8_T, rank - 1, DATA_TAG, MPI_COMM_WORLD);
+        memset(recv_halo_col, 0, sizeof(uint8_t) * rows);
+    }
+    else {
+        MPI_Sendrecv(halo_lft, rows, MPI_UINT8_T, rank - 1, DATA_TAG,
+                    recv_halo_col, rows, MPI_UINT8_T, rank + 1, DATA_TAG,
+                    MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+    free(halo_lft);
+
+    from[0] = cols + 1; from[1] = 1;
+    to[0] = cols + 1; to[1] = rows;
+    place_chunk(data_with_halos, rows + 2, cols + 2, recv_halo_col, from, to);
+
+    // Halo right - Send right, receive left
+    int from_hrgt[] = {cols - 1, 0};
+    int to_hrgt[] = {cols - 1, rows - 1};
+    uint8_t* halo_rgt = get_chunk(data, rows, cols, from_hrgt, to_hrgt);
+    if(is_on_first_col) {
+        MPI_Send(halo_rgt, rows, MPI_UINT8_T, rank + 1, DATA_TAG, MPI_COMM_WORLD);
+        memset(recv_halo_col, 0, sizeof(uint8_t) * rows);
+    }
+    else if(is_on_last_col) {
+        MPI_Recv(recv_halo_col, rows, MPI_UINT8_T, rank - 1, DATA_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+    else {
+        MPI_Sendrecv(halo_rgt, rows, MPI_UINT8_T, rank + 1, DATA_TAG,
+                    recv_halo_col, rows, MPI_UINT8_T, rank - 1, DATA_TAG,
+                    MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+    free(halo_rgt);
+
+    from[0] = 0; from[1] = 1;
+    to[0] = 0; to[1] = rows;
+    place_chunk(data_with_halos, rows + 2, cols + 2, recv_halo_col, from, to);
+
+    updater(data_with_halos, rows + 2, cols + 2);
+
+
+    MPI_Barrier(MPI_COMM_WORLD); // Wait for updater
+
+
+    free(data);
+    from[0] = 1; from[1] = 1;
+    to[0] = cols; to[1] = rows;
+    data = get_chunk(data_with_halos, rows + 2, cols + 2, from, to);
+
+    free(data_with_halos);
+
+    MPI_Send(data, rows * cols, MPI_UINT8_T, 0, DATA_TAG, MPI_COMM_WORLD);
+
+    free(data);
+    free(recv_halo_row);
+    free(recv_halo_col);
+}
 
