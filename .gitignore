@@ -57,7 +57,18 @@ dkms.conf
 # vscode
 .vscode
 
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
 # misc
-inputs/
+# inputs/
 outputs/
 Makefile

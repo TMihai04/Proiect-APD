@@ -1,0 +1,17 @@
+[project]
+name = "Proiect-APD"
+version = "0.1.0"
+description = "Game of life execution time measurements"
+readme = "README.md"
+requires-python = ">= 3.12"
+
+authors = [
+    {name = "Mihai Toderasc", email = "mihai.toderasc@student.upt.ro"}
+]
+
+dependencies = [
+    "matplotlib>=3.10.8",
+]
+
+[project.urls]
+Repository = "https://github.com/TMihai04/Proiect-APD"
